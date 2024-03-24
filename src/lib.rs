@@ -909,6 +909,15 @@ pub enum AuthState {
         /// The cached access token, if any
         token: CachedToken,
     },
+    /// Authentication with a user access token
+    AccessToken {
+        /// The client id
+        client_id: String,
+        /// The client secret
+        client_secret: String,
+        /// The user access token
+        user_access_token: SecretString,
+    },
 }
 
 pub type OctocrabService = Buffer<
@@ -1003,6 +1012,33 @@ impl Octocrab {
         let crab = self.installation(id);
         let token = crab.request_installation_auth_token().await?;
         Ok((crab, token))
+    }
+
+    /// Returns a new `Octocrab` based on the current builder but
+    /// authorizing via a specific user access token.
+    /// Typically you will first construct an `Octocrab` using
+    /// `OctocrabBuilder::basic_auth` to authenticate as your Github App,
+    /// then obtain a user access token, and then pass that here to
+    /// obtain a new `Octocrab` with which you can make API calls
+    /// with the permissions of that user access token.
+    pub fn with_user_access_token(&self, user_access_token: SecretString) -> Octocrab {
+        let (client_id, client_secret) = if let AuthState::BasicAuth {
+            ref username,
+            ref password,
+        } = self.auth_state
+        {
+            (username, password)
+        } else {
+            panic!("Github Oauth client_id and client_secret are required to target user access tokens");
+        };
+        Octocrab {
+            client: self.client.clone(),
+            auth_state: AuthState::AccessToken {
+                client_id: client_id.clone(),
+                client_secret: client_secret.clone(),
+                user_access_token,
+            },
+        }
     }
 }
 
@@ -1535,6 +1571,16 @@ impl Octocrab {
                         .context(HttpSnafu)?,
                 )
             }
+            AuthState::AccessToken {
+                ref user_access_token,
+                ..
+            } => Some(
+                HeaderValue::from_str(
+                    format!("Bearer {}", user_access_token.expose_secret()).as_str(),
+                )
+                .map_err(http::Error::from)
+                .context(HttpSnafu)?,
+            ),
         };
 
         if let Some(mut auth_header) = auth_header {
