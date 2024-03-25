@@ -23,6 +23,7 @@ impl std::error::Error for UriParseError {}
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum Error {
+    #[snafu(display("GiHub Error: {}\n\nFound at {}", source, backtrace))]
     GitHub {
         source: GitHubError,
         backtrace: Backtrace,
